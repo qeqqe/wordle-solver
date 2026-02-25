@@ -7,6 +7,7 @@ struct Wordle {
     word: Vec<u8>,
     guesses: Guesses,
     word_freq: [u8; 26],
+    dictionary: HashSet<&'static str>,
 }
 
 #[derive(Default)]
@@ -29,17 +30,19 @@ impl Wordle {
     fn new() -> Self {
         let index = Self::generate_random_index() as usize;
         println!("index: {}", index);
-        let word = Self::get_word(2544).unwrap();
+        let word = Self::get_word(index).unwrap();
 
         let mut word_freq: [u8; 26] = [0; 26];
         for ch in &word {
             let index = (ch - 97) as usize;
             word_freq[index] += 1;
         }
+        let dictionary = Self::load_words();
         Self {
             word,
             guesses: Guesses::default(),
             word_freq,
+            dictionary,
         }
     }
 
@@ -47,11 +50,19 @@ impl Wordle {
         let target_display = String::from_utf8_lossy(&self.word);
         println!("Actual Word: {}", target_display);
 
-        for attempt in 1..=6 {
+        let mut attempt = 1;
+
+        while attempt <= 6 {
             println!("\ntry number: {}", attempt);
 
             let mut input = String::new();
             std::io::stdin().read_line(&mut input).expect("failed read");
+            let input = input.trim().to_string();
+
+            if !self.dictionary.contains(input.as_str()) {
+                println!("Word doesn't exit, try again...");
+                continue;
+            }
 
             let guess: Vec<u8> = input.trim().as_bytes().to_vec();
 
@@ -112,6 +123,7 @@ impl Wordle {
                 println!("\nDone it in {} tries!", attempt);
                 break;
             }
+            attempt += 1;
         }
     }
     fn generate_random_index() -> u128 {
@@ -125,6 +137,11 @@ impl Wordle {
     fn get_word(ind: usize) -> Option<Vec<u8>> {
         let contents = include_bytes!("../wordle-dictionary.txt");
         contents.split(|&b| b == b'\n').nth(ind).map(|l| l.to_vec())
+    }
+
+    fn load_words() -> HashSet<&'static str> {
+        let content = include_str!("../wordle-dictionary.txt");
+        content.lines().collect()
     }
 }
 
