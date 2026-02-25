@@ -60,56 +60,16 @@ impl Wordle {
                 continue;
             }
 
-            let mut freq_clone = self.word_freq;
-            let mut result: [LetterResult; 5] = [LetterResult::Miss; 5];
-
-            // for matching
-            for ind in 0..5 {
-                if guess[ind] == self.word[ind] {
-                    freq_clone[(guess[ind] - b'a') as usize] -= 1;
-                    result[ind] = LetterResult::Match;
-                }
-            }
-
-            // for existing
-            for ind in 0..5 {
-                if result[ind] == LetterResult::Match {
-                    continue;
-                }
-                let remain_ind = (guess[ind] - b'a') as usize;
-                if freq_clone[remain_ind] > 0 {
-                    result[ind] = LetterResult::Exist;
-                    freq_clone[remain_ind] -= 1;
-                }
-            }
-
-            let mut matches = 0;
-
-            for ind in 0..5 {
-                let g_char = guess[ind] as char;
-                let g_ascii = guess[ind];
-                match result[ind] {
-                    LetterResult::Match => {
-                        println!("[MATCH] index {}: '{}'", ind, g_char);
-                        self.guesses.right_position.insert((ind as u8, g_ascii));
-                        matches += 1;
-                    }
-                    LetterResult::Exist => {
-                        println!("[EXIST] on {}: '{}'", ind, g_char);
-                        self.guesses.wrong_position.insert((ind as u8, g_ascii));
-                    }
-                    LetterResult::Miss => {
-                        println!("[MISS ] brah {}: '{}'", ind, g_char);
-                        self.guesses.wrong.insert(g_ascii);
-                    }
-                }
+            let mut remaining_freq = self.word_freq;
+            let mut results = [LetterResult::Miss; 5];
                 println!(
                     "Stats. Right position {:?}, Wrong position {:?}, Wrong {:?}",
                     self.guesses.right_position, self.guesses.wrong_position, self.guesses.wrong
                 );
             }
+
             if matches == 5 {
-                println!("\nDone it in {} tries!", attempt);
+                println!("\nGot it in {} tries!", attempt);
                 break;
             }
         }
