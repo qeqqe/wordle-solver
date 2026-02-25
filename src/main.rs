@@ -3,11 +3,14 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use crate::custom_hasher::FastHashSet;
+mod custom_hasher;
+
 struct Wordle {
     word: Vec<u8>,
     guesses: Guesses,
     word_freq: [u8; 26],
-    dictionary: HashSet<&'static str>,
+    dictionary: FastHashSet<&'static str>,
 }
 
 #[derive(Default)]
@@ -139,9 +142,13 @@ impl Wordle {
         contents.split(|&b| b == b'\n').nth(ind).map(|l| l.to_vec())
     }
 
-    fn load_words() -> HashSet<&'static str> {
+    fn load_words() -> FastHashSet<&'static str> {
         let content = include_str!("../wordle-dictionary.txt");
-        content.lines().collect()
+        let mut dictionary: FastHashSet<&'static str> = FastHashSet::default();
+        for word in content.lines() {
+            dictionary.insert(word);
+        }
+        dictionary
     }
 }
 
