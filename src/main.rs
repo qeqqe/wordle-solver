@@ -3,22 +3,27 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use crate::custom_hasher::FastHashSet;
+use crate::{
+    custom_hasher::FastHashSet,
+    word_index::{Constraint, ConstraintKind, WordIndex},
+};
+
 mod custom_hasher;
+mod word_index;
 
 struct Wordle {
     word: Vec<u8>,
     guesses: Guesses,
     word_freq: [u8; 26],
     dictionary: FastHashSet<&'static str>,
+    index: WordIndex,
 }
 
 #[derive(Default)]
 struct Guesses {
     wrong: HashSet<u8>,
-    //                index, word
+    //                index, letter_ascii
     right_position: HashSet<(u8, u8)>,
-    // just store the alpahabets
     wrong_position: HashSet<(u8, u8)>,
 }
 
@@ -31,21 +36,25 @@ enum LetterResult {
 
 impl Wordle {
     fn new() -> Self {
-        let index = Self::generate_random_index() as usize;
-        println!("index: {}", index);
-        let word = Self::get_word(index).unwrap();
+        let index_num = Self::generate_random_index() as usize;
+        println!("index: {}", index_num);
+        let word = Self::get_word(index_num).unwrap();
 
         let mut word_freq: [u8; 26] = [0; 26];
         for ch in &word {
-            let index = (ch - 97) as usize;
-            word_freq[index] += 1;
+            let i = (ch - b'a') as usize;
+            word_freq[i] += 1;
         }
-        let dictionary = Self::load_words();
+
+        let dictionary = Self::load_dict();
+        let index = Self::build_index();
+
         Self {
             word,
             guesses: Guesses::default(),
             word_freq,
             dictionary,
+            index,
         }
     }
 
@@ -63,11 +72,11 @@ impl Wordle {
             let input = input.trim().to_string();
 
             if !self.dictionary.contains(input.as_str()) {
-                println!("Word doesn't exit, try again...");
+                println!("Word doesn't exist, try again...");
                 continue;
             }
 
-            let guess: Vec<u8> = input.trim().as_bytes().to_vec();
+            let guess: Vec<u8> = input.as_bytes().to_vec();
 
             if guess.len() != 5 {
                 println!("need 5 letters, got {}", guess.len());
@@ -77,7 +86,6 @@ impl Wordle {
             let mut freq_clone = self.word_freq;
             let mut result: [LetterResult; 5] = [LetterResult::Miss; 5];
 
-            // for matching
             for ind in 0..5 {
                 if guess[ind] == self.word[ind] {
                     freq_clone[(guess[ind] - b'a') as usize] -= 1;
@@ -85,15 +93,14 @@ impl Wordle {
                 }
             }
 
-            // for existing
             for ind in 0..5 {
                 if result[ind] == LetterResult::Match {
                     continue;
                 }
-                let remain_ind = (guess[ind] - b'a') as usize;
-                if freq_clone[remain_ind] > 0 {
+                let l = (guess[ind] - b'a') as usize;
+                if freq_clone[l] > 0 {
                     result[ind] = LetterResult::Exist;
-                    freq_clone[remain_ind] -= 1;
+                    freq_clone[l] -= 1;
                 }
             }
 
@@ -109,26 +116,86 @@ impl Wordle {
                         matches += 1;
                     }
                     LetterResult::Exist => {
-                        println!("[EXIST] on {}: '{}'", ind, g_char);
+                        println!("[EXIST] index {}: '{}'", ind, g_char);
                         self.guesses.wrong_position.insert((ind as u8, g_ascii));
                     }
                     LetterResult::Miss => {
-                        println!("[MISS ] brah {}: '{}'", ind, g_char);
+                        println!("[MISS ] index {}: '{}'", ind, g_char);
                         self.guesses.wrong.insert(g_ascii);
                     }
                 }
-                println!(
-                    "Stats. Right position {:?}, Wrong position {:?}, Wrong {:?}",
-                    self.guesses.right_position, self.guesses.wrong_position, self.guesses.wrong
-                );
             }
+
+            println!(
+                "Stats — green: {:?} | yellow: {:?} | gray: {:?}",
+                self.guesses.right_position,
+                self.guesses.wrong_position,
+                self.guesses
+                    .wrong
+                    .iter()
+                    .map(|&b| b as char)
+                    .collect::<Vec<_>>()
+            );
+
             if matches == 5 {
                 println!("\nDone it in {} tries!", attempt);
                 break;
             }
+
+            let suggestions = self.suggestion();
+            if suggestions.is_empty() {
+                println!("No suggestions left — something went wrong.");
+            } else {
+                let display: Vec<_> = suggestions.iter().take(10).collect();
+                println!(
+                    "Suggestions ({} possible words): {:?}{}",
+                    suggestions.len(),
+                    display,
+                    if suggestions.len() > 10 { " ..." } else { "" }
+                );
+            }
+
             attempt += 1;
         }
     }
+
+    fn suggestion(&self) -> Vec<&'static str> {
+        let mut constraints: Vec<Constraint> = Vec::new();
+
+        for &(pos, letter) in &self.guesses.right_position {
+            constraints.push(Constraint {
+                letter,
+                kind: ConstraintKind::GreenAt(pos as usize),
+            });
+        }
+
+        for &(pos, letter) in &self.guesses.wrong_position {
+            constraints.push(Constraint {
+                letter,
+                kind: ConstraintKind::YellowAt(pos as usize),
+            });
+        }
+
+        let confirmed: HashSet<u8> = self
+            .guesses
+            .right_position
+            .iter()
+            .map(|&(_, l)| l)
+            .chain(self.guesses.wrong_position.iter().map(|&(_, l)| l))
+            .collect();
+
+        for &letter in &self.guesses.wrong {
+            if !confirmed.contains(&letter) {
+                constraints.push(Constraint {
+                    letter,
+                    kind: ConstraintKind::Gray,
+                });
+            }
+        }
+
+        self.index.query(&constraints)
+    }
+
     fn generate_random_index() -> u128 {
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -142,13 +209,19 @@ impl Wordle {
         contents.split(|&b| b == b'\n').nth(ind).map(|l| l.to_vec())
     }
 
-    fn load_words() -> FastHashSet<&'static str> {
+    fn load_dict() -> FastHashSet<&'static str> {
         let content = include_str!("../wordle-dictionary.txt");
         let mut dictionary: FastHashSet<&'static str> = FastHashSet::default();
         for word in content.lines() {
             dictionary.insert(word);
         }
         dictionary
+    }
+
+    fn build_index() -> WordIndex {
+        let content = include_str!("../wordle-dictionary.txt");
+        let words: Vec<&'static str> = content.lines().collect();
+        WordIndex::build(words)
     }
 }
 
