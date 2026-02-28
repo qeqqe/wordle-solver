@@ -128,8 +128,16 @@ impl Wordle {
 
             println!(
                 "Stats — green: {:?} | yellow: {:?} | gray: {:?}",
-                self.guesses.right_position,
-                self.guesses.wrong_position,
+                self.guesses
+                    .right_position
+                    .iter()
+                    .map(|&(pos, byte)| (pos, byte as char))
+                    .collect::<Vec<_>>(),
+                self.guesses
+                    .wrong_position
+                    .iter()
+                    .map(|&(pos, byte)| (pos, byte as char))
+                    .collect::<Vec<_>>(),
                 self.guesses
                     .wrong
                     .iter()

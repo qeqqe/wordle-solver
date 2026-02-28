@@ -60,7 +60,7 @@ impl BuildHasher for FastHashBuilder {
 
     #[inline]
     fn build_hasher(&self) -> FastHash {
-        FastHash { hash: 0 }
+        FastHash { hash: K }
     }
 }
 
